@@ -25,6 +25,7 @@ import CalendarFilters from '@/components/reservations/CalendarFilters';
 import ContractGenerator from '@/components/reservations/ContractGenerator';
 import ReceiptGenerator from '@/components/reservations/ReceiptGenerator';
 import WeeklyOverview from '@/components/reservations/WeeklyOverview';
+import OccupancyGrid from '@/components/reservations/OccupancyGrid';
 
 type Propriete = {
   id: string;
@@ -61,7 +62,14 @@ const reservationSchema = z.object({
 type ReservationFormValues = z.infer<typeof reservationSchema>;
 
 const Reservations = () => {
-  const [activeTab, setActiveTab] = useState<string>("ajout");
+  const [activeTab, setActiveTab] = useState<string>(
+    () => localStorage.getItem('reservations_active_tab') ?? 'ajout'
+  );
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    localStorage.setItem('reservations_active_tab', value);
+  };
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [proprietes, setProprietes] = useState<Propriete[]>([]);
   const [sources, setSources] = useState<SourceReservation[]>([]);
@@ -311,10 +319,11 @@ const Reservations = () => {
   return (
     <div className="container mx-auto py-8">
       <h1 className="text-2xl font-bold mb-6">Gestion des Réservations</h1>
-      <Tabs defaultValue="ajout" value={activeTab} onValueChange={setActiveTab}>
+      <Tabs defaultValue="ajout" value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="mb-6">
           <TabsTrigger value="calendrier">Calendrier</TabsTrigger>
           <TabsTrigger value="vue-hebdomadaire">Vue Hebdomadaire</TabsTrigger>
+          <TabsTrigger value="grille">Vue Globale</TabsTrigger>
           <TabsTrigger value="liste">Liste des réservations</TabsTrigger>
           <TabsTrigger value="ajout">Ajouter une réservation</TabsTrigger>
         </TabsList>
@@ -366,6 +375,20 @@ const Reservations = () => {
               <div className="mt-4">
                 <WeeklyOverview onlyProprietes={filteredProprietes} />
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="grille">
+          <Card>
+            <CardHeader>
+              <CardTitle>Vue Globale</CardTitle>
+              <CardDescription>
+                Vue matricielle par propriété et par jour — rouge: Airbnb, vert: autre source, jaune: source inconnue.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <OccupancyGrid />
             </CardContent>
           </Card>
         </TabsContent>

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { format, parseISO, isAfter, isBefore, isEqual } from 'date-fns';
+import { format, parseISO, isAfter, isBefore, isEqual, addDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { supabase } from '@/lib/supabaseClient';
 import { toast } from '@/components/ui/use-toast';
@@ -122,10 +122,13 @@ const ReservationsList: React.FC = () => {
     searchTerm: '',
     proprieteId: 'all',
     sourceNom: 'all',
-    status: 'all', // Ajout du filtre par statut initialisé à 'all'
+    status: 'all',
     dateArriveeDebut: null,
     dateArriveeFin: null
   });
+
+  const [showTomorrow, setShowTomorrow] = useState(false);
+  const tomorrowStr = format(addDays(new Date(), 1), 'yyyy-MM-dd');
 
   // Chargement initial des données
   useEffect(() => {
@@ -251,7 +254,12 @@ const ReservationsList: React.FC = () => {
         if (filters.dateArriveeFin && matchesDateArrivee) {
           matchesDateArrivee = isBefore(dateArrivee, filters.dateArriveeFin) || isEqual(dateArrivee, filters.dateArriveeFin);
         }
-        return matchesSearch && matchesPropriete && matchesStatus && matchesDateArrivee;
+        // Filtre "Arrivées/Sorties demain"
+        const matchesTomorrow = !showTomorrow || (
+          item.date_arrivee === tomorrowStr || item.date_depart === tomorrowStr
+        );
+
+        return matchesSearch && matchesPropriete && matchesStatus && matchesDateArrivee && matchesTomorrow;
       });
     };
 
@@ -296,7 +304,7 @@ const ReservationsList: React.FC = () => {
     const filtered = applyFilters(reservations);
     const sorted = sortData(filtered);
     setFilteredReservations(sorted);
-  }, [reservations, filters, sortConfig, proprietes]);
+  }, [reservations, filters, sortConfig, proprietes, showTomorrow, tomorrowStr]);
 
   // Gérer la suppression d'une réservation
   const handleDelete = async () => {
@@ -614,7 +622,17 @@ const ReservationsList: React.FC = () => {
       })}>
             Reset dates
           </Button>}
-        
+
+        {/* Bouton Arrivées/Sorties demain */}
+        <Button
+          variant={showTomorrow ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setShowTomorrow(v => !v)}
+          className={showTomorrow ? 'bg-orange-500 hover:bg-orange-600 border-orange-500' : ''}
+        >
+          Arrivées / Sorties demain
+        </Button>
+
         {/* Compteur de résultats */}
         <div className="ml-auto flex items-center gap-3">
           <div className="text-sm text-gray-500">
@@ -624,116 +642,150 @@ const ReservationsList: React.FC = () => {
       </div>
 
       {/* Tableau des réservations */}
-      <div className="rounded-md border overflow-hidden">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className={getSortableHeaderClass("client_nom")} onClick={() => handleSort("client_nom")}>
-                  Client {renderSortIcon("client_nom")}
-                </TableHead>
-                <TableHead className={getSortableHeaderClass("propriete_nom")} onClick={() => handleSort("propriete_nom")}>
-                  Propriété {renderSortIcon("propriete_nom")}
-                </TableHead>
-                <TableHead className={getSortableHeaderClass("date_arrivee")} onClick={() => handleSort("date_arrivee")}>
-                  Date d'arrivée {renderSortIcon("date_arrivee")}
-                </TableHead>
-                <TableHead className={getSortableHeaderClass("date_depart")} onClick={() => handleSort("date_depart")}>
-                  Date de départ {renderSortIcon("date_depart")}
-                </TableHead>
-                <TableHead>Nuits</TableHead>
-                <TableHead>Prix total</TableHead>
-                <TableHead>Mode paiement</TableHead>
-                <TableHead className={getSortableHeaderClass("status")} onClick={() => handleSort("status")}>
-                  Statut {renderSortIcon("status")}
-                </TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? <TableRow>
+      {(() => {
+        const tableHeader = (
+          <TableRow>
+            <TableHead className={getSortableHeaderClass("client_nom")} onClick={() => handleSort("client_nom")}>
+              Client {renderSortIcon("client_nom")}
+            </TableHead>
+            <TableHead className={getSortableHeaderClass("propriete_nom")} onClick={() => handleSort("propriete_nom")}>
+              Propriété {renderSortIcon("propriete_nom")}
+            </TableHead>
+            <TableHead className={getSortableHeaderClass("date_arrivee")} onClick={() => handleSort("date_arrivee")}>
+              Date d'arrivée {renderSortIcon("date_arrivee")}
+            </TableHead>
+            <TableHead className={getSortableHeaderClass("date_depart")} onClick={() => handleSort("date_depart")}>
+              Date de départ {renderSortIcon("date_depart")}
+            </TableHead>
+            <TableHead>Nuits</TableHead>
+            <TableHead>Prix total</TableHead>
+            <TableHead>Mode paiement</TableHead>
+            <TableHead className={getSortableHeaderClass("status")} onClick={() => handleSort("status")}>
+              Statut {renderSortIcon("status")}
+            </TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        );
+
+        const renderRows = (list: ReservationWithDetails[], rowClass: string) =>
+          list.map(reservation => (
+            <TableRow key={reservation.id} className={rowClass}>
+              <TableCell className="whitespace-nowrap">
+                {reservation.client.nom} {reservation.client.prenom}
+              </TableCell>
+              <TableCell className="whitespace-nowrap">{reservation.propriete.nom}</TableCell>
+              <TableCell className="whitespace-nowrap">
+                {format(parseISO(reservation.date_arrivee), 'dd/MM/yyyy')}
+              </TableCell>
+              <TableCell className="whitespace-nowrap">
+                {format(parseISO(reservation.date_depart), 'dd/MM/yyyy')}
+              </TableCell>
+              <TableCell>{reservation.nombre_jours}</TableCell>
+              <TableCell className="whitespace-nowrap">{formatPrice(reservation.prix_total)}</TableCell>
+              <TableCell>{reservation.mode_paiement}</TableCell>
+              <TableCell className="whitespace-nowrap">{renderStatus(reservation.status)}</TableCell>
+              <TableCell className="text-right whitespace-nowrap">
+                <div className="flex justify-end gap-1">
+                  <Button variant="ghost" size="icon" aria-label="Générer contrat" title="Générer contrat" onClick={() => handleGenerateContract(reservation)}>
+                    <FileText className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" aria-label="Générer récépissé" title="Générer récépissé" onClick={() => handleGenerateReceipt(reservation)}>
+                    <Printer className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" aria-label="Modifier" onClick={() => setEditReservationId(reservation.id)}>
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" aria-label="Supprimer" onClick={() => setReservationToDelete(reservation.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </TableCell>
+            </TableRow>
+          ));
+
+        if (loading) {
+          return (
+            <div className="rounded-md border overflow-hidden">
+              <Table><TableBody>
+                <TableRow>
                   <TableCell colSpan={9} className="text-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     <span className="mt-2 block text-sm text-gray-500">Chargement des réservations...</span>
                   </TableCell>
-                </TableRow> : filteredReservations.length === 0 ? <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
-                    <div className="text-gray-500">
-                      <FileText className="h-12 w-12 mx-auto opacity-20" />
-                      <p className="mt-2">Aucune réservation ne correspond aux critères</p>
-                    </div>
-                  </TableCell>
-                </TableRow> : filteredReservations.map(reservation => <TableRow key={reservation.id}>
-                    <TableCell className="whitespace-nowrap">
-                      {reservation.client.nom} {reservation.client.prenom}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {reservation.propriete.nom}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {format(parseISO(reservation.date_arrivee), 'dd/MM/yyyy')}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {format(parseISO(reservation.date_depart), 'dd/MM/yyyy')}
-                    </TableCell>
-                    <TableCell>{reservation.nombre_jours}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {formatPrice(reservation.prix_total)}
-                    </TableCell>
-                    <TableCell>{reservation.mode_paiement}</TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {renderStatus(reservation.status)}
-                    </TableCell>
-                    <TableCell className="text-right whitespace-nowrap">
-                      <div className="flex justify-end gap-1">
-                        {/* Bouton pour générer le contrat */}
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          aria-label="Générer contrat"
-                          onClick={() => handleGenerateContract(reservation)}
-                          title="Générer contrat"
-                        >
-                          <FileText className="h-4 w-4" />
-                        </Button>
-                        
-                        {/* Bouton pour générer le récépissé */}
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          aria-label="Générer récépissé"
-                          onClick={() => handleGenerateReceipt(reservation)}
-                          title="Générer récépissé"
-                        >
-                          <Printer className="h-4 w-4" />
-                        </Button>
-                        
-                        {/* Bouton pour modifier */}
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          aria-label="Modifier"
-                          onClick={() => setEditReservationId(reservation.id)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        
-                        {/* Bouton pour supprimer */}
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          aria-label="Supprimer" 
-                          onClick={() => setReservationToDelete(reservation.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>)}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+                </TableRow>
+              </TableBody></Table>
+            </div>
+          );
+        }
+
+        if (showTomorrow) {
+          const arrivees = filteredReservations.filter(r => r.date_arrivee === tomorrowStr);
+          const departs  = filteredReservations.filter(r => r.date_depart  === tomorrowStr);
+          return (
+            <div className="space-y-6">
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="inline-block w-3 h-3 rounded-full bg-green-500" />
+                  <h3 className="font-semibold text-green-700">Arrivées demain ({arrivees.length})</h3>
+                </div>
+                <div className="rounded-md border overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>{tableHeader}</TableHeader>
+                      <TableBody>
+                        {arrivees.length === 0
+                          ? <TableRow><TableCell colSpan={9} className="text-center py-6 text-gray-400">Aucune arrivée prévue demain</TableCell></TableRow>
+                          : renderRows(arrivees, 'bg-green-50 hover:bg-green-100')}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="inline-block w-3 h-3 rounded-full bg-red-500" />
+                  <h3 className="font-semibold text-red-700">Départs demain ({departs.length})</h3>
+                </div>
+                <div className="rounded-md border overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>{tableHeader}</TableHeader>
+                      <TableBody>
+                        {departs.length === 0
+                          ? <TableRow><TableCell colSpan={9} className="text-center py-6 text-gray-400">Aucun départ prévu demain</TableCell></TableRow>
+                          : renderRows(departs, 'bg-red-50 hover:bg-red-100')}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="rounded-md border overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>{tableHeader}</TableHeader>
+                <TableBody>
+                  {filteredReservations.length === 0
+                    ? <TableRow>
+                        <TableCell colSpan={9} className="text-center py-8">
+                          <div className="text-gray-500">
+                            <FileText className="h-12 w-12 mx-auto opacity-20" />
+                            <p className="mt-2">Aucune réservation ne correspond aux critères</p>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    : renderRows(filteredReservations, '')}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Dialogue de confirmation de suppression */}
       <Dialog open={!!reservationToDelete} onOpenChange={open => !open && setReservationToDelete(null)}>
