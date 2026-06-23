@@ -98,34 +98,53 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "No record in payload" }), { status: 400 });
     }
 
-    // Fetch the related client and propriete rows (webhook payload only has raw FKs)
-    const [{ data: client, error: clientErr }, { data: propriete, error: propErr }] =
-      await Promise.all([
-        supabase.from("clients").select("*").eq("id", record.id_client).single(),
-        supabase.from("proprietes").select("*").eq("id", record.id_propriete).single(),
-      ]);
-
-    if (clientErr) throw new Error(`Client fetch failed: ${clientErr.message}`);
+    // Fetch the propriete row (always needed for column B)
+    const { data: propriete, error: propErr } = await supabase
+      .from("proprietes").select("*").eq("id", record.id_propriete).single();
     if (propErr) throw new Error(`Propriete fetch failed: ${propErr.message}`);
 
     const bienAppartement = `${propriete.nom_residence ?? ""} - ${propriete.nom ?? ""}`.trim();
-    const clientNomComplet = `${client.prenom ?? ""} ${client.nom ?? ""}`.trim();
 
-    // Row order must match the sheet's raw columns A..K (Montant Net included as its own
-    // value here, NOT computed by a formula, since Supabase already computed prix_total).
-    const row = [
-      new Date().toISOString(),       // A: Horodateur
-      bienAppartement,                 // B: Bien - Appartement
-      formatDate(record.date_arrivee), // C: Entrée
-      formatDate(record.date_depart),  // D: Sortie
-      record.prix_par_nuit ?? "",      // E: Prix par nuit
-      record.paiement_avance ?? "",    // F: AVANCE
-      clientNomComplet,                // G: Nom du client
-      client.cin_passport ?? "",       // H: CIN
-      client.telephone ?? "",          // I: Téléphone
-      record.source ?? "",             // J: Source
-      record.prix_total ?? "",         // K: Montant Net (value, not formula — sent as-is)
-    ];
+    let row: unknown[];
+
+    if (record.is_blocked) {
+      // Blocked period: write a placeholder row with no client or financial data
+      row = [
+        new Date().toISOString(),        // A: Horodateur
+        bienAppartement,                  // B: Bien - Appartement
+        formatDate(record.date_arrivee),  // C: Entrée
+        formatDate(record.date_depart),   // D: Sortie
+        0,                                // E: Prix par nuit
+        0,                                // F: AVANCE
+        "Blocked",                        // G: Nom du client
+        "",                               // H: CIN
+        "",                               // I: Téléphone
+        record.blocked_reason ?? "",      // J: Source (motif du blocage)
+        0,                                // K: Montant Net
+      ];
+    } else {
+      // Normal reservation: fetch client and build full row
+      const { data: client, error: clientErr } = await supabase
+        .from("clients").select("*").eq("id", record.id_client).single();
+      if (clientErr) throw new Error(`Client fetch failed: ${clientErr.message}`);
+
+      const clientNomComplet = `${client.prenom ?? ""} ${client.nom ?? ""}`.trim();
+
+      // Row order must match the sheet's raw columns A..K
+      row = [
+        new Date().toISOString(),        // A: Horodateur
+        bienAppartement,                  // B: Bien - Appartement
+        formatDate(record.date_arrivee),  // C: Entrée
+        formatDate(record.date_depart),   // D: Sortie
+        record.prix_par_nuit ?? "",       // E: Prix par nuit
+        record.paiement_avance ?? "",     // F: AVANCE
+        clientNomComplet,                 // G: Nom du client
+        client.cin_passport ?? "",        // H: CIN
+        client.telephone ?? "",           // I: Téléphone
+        record.source ?? "",              // J: Source
+        record.prix_total ?? "",          // K: Montant Net
+      ];
+    }
 
     const accessToken = await getGoogleAccessToken();
 

@@ -41,6 +41,7 @@ const reservationSchema = z.object({
   prenom: z.string().min(1, { message: 'Le prénom est requis' }),
   telephone: z.string().min(1, { message: 'Le téléphone est requis' }),
   cin_passport: z.string().optional(),
+  email: z.union([z.string().email({ message: 'Email invalide' }), z.literal('')]).optional(),
   autre_info: z.string().optional(),
 
   id_propriete: z.string().min(1, { message: 'Veuillez sélectionner une propriété' }),
@@ -89,6 +90,7 @@ const Reservations = () => {
       prenom: '',
       telephone: '',
       cin_passport: '',
+      email: '',
       autre_info: '',
       id_propriete: '',
       source: '',
@@ -252,6 +254,7 @@ const Reservations = () => {
         prenom: data.prenom,
         telephone: data.telephone,
         cin_passport: data.cin_passport || null,
+        email: data.email || null,
         autre_info: data.autre_info || null
       });
       if (clientInsert.error) throw clientInsert.error;
@@ -293,6 +296,33 @@ const Reservations = () => {
       if (reglementInsert.error) throw reglementInsert.error;
 
       toast.success('Réservation ajoutée avec succès');
+
+      // Envoi email de confirmation si email fourni (non bloquant)
+      if (data.email) {
+        const selectedProp = proprietes.find(p => p.id === data.id_propriete);
+        supabase.functions.invoke('send-reservation-confirmation', {
+          body: {
+            clientEmail:    data.email,
+            clientNom:      data.nom,
+            clientPrenom:   data.prenom,
+            proprieteNom:   selectedProp?.nom ?? '',
+            residenceNom:   selectedProp?.nom_residence ?? '',
+            dateArrivee:    format(data.date_arrivee, 'yyyy-MM-dd'),
+            dateDepart:     format(data.date_depart, 'yyyy-MM-dd'),
+            nombreJours,
+            prixTotal,
+            paiementAvance: data.paiement_avance,
+            resteAPayer,
+          },
+        }).then(({ error }) => {
+          if (error) {
+            console.error('Email confirmation error:', error);
+          } else {
+            toast.success('Email de confirmation envoyé au client');
+          }
+        });
+      }
+
       form.reset();
       setNombreJours(0);
       setPrixTotal(0);
@@ -477,6 +507,23 @@ const Reservations = () => {
                             <FormLabel>CIN / Passeport</FormLabel>
                             <FormControl>
                               <Input placeholder="Numéro de CIN ou passeport (optionnel)" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              Email{' '}
+                              <span className="text-muted-foreground font-normal text-xs">(optionnel — confirmation envoyée automatiquement)</span>
+                            </FormLabel>
+                            <FormControl>
+                              <Input type="email" placeholder="email@exemple.com" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>

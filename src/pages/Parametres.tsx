@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import ReferenceTableManager from "@/components/reference/ReferenceTableManager";
 import UserManagement from "@/components/settings/UserManagement";
 import AppSettingsManager from "@/components/settings/AppSettingsManager";
+import BackupManager from "@/components/settings/BackupManager";
 import useUserPermissions from "@/hooks/useUserPermissions";
 
 const definitions = [{
@@ -41,6 +42,11 @@ const definitions = [{
   title: "Paramètres App",
   table: "app_settings",
   placeholder: ""
+}, {
+  key: "backup",
+  title: "Backup",
+  table: "",
+  placeholder: ""
 }];
 
 export default function Parametres() {
@@ -71,15 +77,17 @@ export default function Parametres() {
           ))}
         </TabsList>
         
-        {definitions.filter(def => def.key !== "user_management" && def.key !== "app_settings").map(def => (
-          <TabsContent key={def.key} value={def.key}>
-            <ReferenceTableManager 
-              table={def.table} 
-              label={def.title} 
-              placeholder={def.placeholder} 
-            />
-          </TabsContent>
-        ))}
+        {definitions
+          .filter(def => def.key !== "user_management" && def.key !== "app_settings" && def.key !== "backup")
+          .map(def => (
+            <TabsContent key={def.key} value={def.key}>
+              <ReferenceTableManager
+                table={def.table}
+                label={def.title}
+                placeholder={def.placeholder}
+              />
+            </TabsContent>
+          ))}
         
         {isAdmin && (
           <TabsContent key="user_management" value="user_management">
@@ -92,6 +100,10 @@ export default function Parametres() {
             <AppSettingsManager />
           </TabsContent>
         )}
+
+        <TabsContent key="backup" value="backup">
+          <BackupManager />
+        </TabsContent>
       </Tabs>
     </div>
   );

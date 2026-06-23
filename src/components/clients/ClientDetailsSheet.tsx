@@ -38,6 +38,7 @@ type BaseClient = {
   cin_passport: string;
 };
 
+
 type Reservation = {
   id: string;
   date_reservation: string | null;
@@ -72,6 +73,7 @@ const ClientDetailsDialog: React.FC<Props> = ({ clientId, onClose }) => {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [payments, setPayments] = useState<Paiement[]>([]);
   const [tab, setTab] = useState("resa");
+  const [cinCount, setCinCount] = useState(1);
 
   useEffect(() => {
     const fetchAll = async () => {
@@ -84,13 +86,28 @@ const ClientDetailsDialog: React.FC<Props> = ({ clientId, onClose }) => {
         .eq("id", clientId)
         .single();
       setClient(c);
-      // Récupérer les réservations + propriété (proprietes doit être objet ou null)
+
+      // Trouver tous les clients partageant le même CIN/Passeport
+      let clientIds: string[] = [clientId];
+      if (c?.cin_passport) {
+        const { data: sameCin } = await supabase
+          .from("clients")
+          .select("id")
+          .eq("cin_passport", c.cin_passport);
+        if (sameCin && sameCin.length > 0) {
+          clientIds = sameCin.map((cl: { id: string }) => cl.id);
+          setCinCount(sameCin.length);
+        }
+      }
+
+      // Récupérer les réservations de tous ces clients (même CIN)
       const { data: resa } = await supabase
         .from("reservations")
         .select(
           "id, date_reservation, date_arrivee, date_depart, prix_total, paiement_avance, reste_a_payer, id_propriete, proprietes(nom)"
         )
-        .eq("id_client", clientId)
+        .in("id_client", clientIds)
+        .eq("is_blocked", false)
         .order("date_reservation", { ascending: false });
 
       // Fix : certaines versions de supabase renvoient proprietes en array (!)
@@ -163,9 +180,14 @@ const ClientDetailsDialog: React.FC<Props> = ({ clientId, onClose }) => {
                   <span className="font-bold">Téléphone : </span>
                   <span>{client.telephone}</span>
                 </div>
-                <div>
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-bold">CIN/Passport : </span>
                   <span>{client.cin_passport}</span>
+                  {cinCount > 1 && (
+                    <span className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+                      {cinCount} fiches · historique regroupé
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -174,7 +196,12 @@ const ClientDetailsDialog: React.FC<Props> = ({ clientId, onClose }) => {
           <div className="px-6 pb-3 flex-1 flex flex-col min-h-0">
             <Tabs value={tab} onValueChange={setTab} className="w-full h-full flex-1 flex flex-col min-h-0">
               <TabsList className="mb-4">
-                <TabsTrigger value="resa">Historique des réservations</TabsTrigger>
+                <TabsTrigger value="resa">
+                  Historique des réservations
+                  {reservations.length > 0 && (
+                    <span className="ml-1.5 text-xs opacity-70">({reservations.length})</span>
+                  )}
+                </TabsTrigger>
                 <TabsTrigger value="paiements">Historique des paiements</TabsTrigger>
               </TabsList>
               <Separator className="mb-2" />

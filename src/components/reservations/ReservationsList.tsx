@@ -34,7 +34,8 @@ type ReservationWithDetails = {
   reference: string | null;
   source: string;
   date_reservation: string;
-  status: string; // Ajout du champ status
+  status: string;
+  proprietaire_paye: boolean;
 };
 
 // Type pour les propriétés et sources (pour les filtres)
@@ -61,8 +62,8 @@ type FiltersType = {
 
 // Constante pour le tri par défaut
 const DEFAULT_SORT = {
-  field: 'date_arrivee',
-  direction: 'asc' as 'asc' | 'desc'
+  field: 'date_reservation',
+  direction: 'desc' as 'asc' | 'desc'
 };
 
 // Liste des statuts disponibles
@@ -130,6 +131,10 @@ const ReservationsList: React.FC = () => {
   const [showTomorrow, setShowTomorrow] = useState(false);
   const tomorrowStr = format(addDays(new Date(), 1), 'yyyy-MM-dd');
 
+  // Pagination
+  const ITEMS_PER_PAGE = 25;
+  const [currentPage, setCurrentPage] = useState(1);
+
   // Chargement initial des données
   useEffect(() => {
     const fetchData = async () => {
@@ -156,8 +161,10 @@ const ReservationsList: React.FC = () => {
             status,
             clients (id, nom, prenom, cin_passport, telephone),
             proprietes (id, nom, nom_residence, type_appartement)
-          `).order('date_arrivee', {
-          ascending: true
+          `)
+          .eq('is_blocked', false)
+          .order('date_reservation', {
+          ascending: false
         });
         if (reservationsError) throw reservationsError;
 
@@ -196,11 +203,28 @@ const ReservationsList: React.FC = () => {
             reference: item.reference,
             source: item.source,
             date_reservation: item.date_reservation,
-            status: item.status || 'Confirmé' // Par défaut "Confirmé" si null
+            status: item.status || 'Confirmé',
+            proprietaire_paye: false,
           };
         });
-        setReservations(formattedReservations);
-        setFilteredReservations(formattedReservations);
+
+        // Vérifier quelles réservations ont été payées au propriétaire
+        const resaIds = formattedReservations.map(r => r.id);
+        let paidIds = new Set<string>();
+        if (resaIds.length > 0) {
+          const { data: paidData } = await supabase
+            .from('virement_reservations')
+            .select('id_reservation')
+            .in('id_reservation', resaIds);
+          paidIds = new Set((paidData ?? []).map((p: any) => p.id_reservation));
+        }
+        const withPaid = formattedReservations.map(r => ({
+          ...r,
+          proprietaire_paye: paidIds.has(r.id),
+        }));
+
+        setReservations(withPaid);
+        setFilteredReservations(withPaid);
 
         // Chargement des propriétés (pour les filtres)
         const {
@@ -287,9 +311,13 @@ const ReservationsList: React.FC = () => {
         }
 
         // Conversion pour les dates
-        if (sortConfig.field === 'date_arrivee' || sortConfig.field === 'date_depart') {
-          aValue = parseISO(aValue as string);
-          bValue = parseISO(bValue as string);
+        if (
+          sortConfig.field === 'date_arrivee' ||
+          sortConfig.field === 'date_depart' ||
+          sortConfig.field === 'date_reservation'
+        ) {
+          aValue = aValue ? parseISO(aValue as string) : new Date(0);
+          bValue = bValue ? parseISO(bValue as string) : new Date(0);
         }
 
         // Gestion de la direction
@@ -304,6 +332,7 @@ const ReservationsList: React.FC = () => {
     const filtered = applyFilters(reservations);
     const sorted = sortData(filtered);
     setFilteredReservations(sorted);
+    setCurrentPage(1);
   }, [reservations, filters, sortConfig, proprietes, showTomorrow, tomorrowStr]);
 
   // Gérer la suppression d'une réservation
@@ -390,8 +419,10 @@ const ReservationsList: React.FC = () => {
             status,
             clients (id, nom, prenom, cin_passport, telephone),
             proprietes (id, nom, nom_residence, type_appartement)
-          `).order('date_arrivee', {
-          ascending: true
+          `)
+          .eq('is_blocked', false)
+          .order('date_reservation', {
+          ascending: false
         });
         if (reservationsError) throw reservationsError;
         const formattedReservations: ReservationWithDetails[] = (reservationsData || []).map((item: any) => {
@@ -428,10 +459,24 @@ const ReservationsList: React.FC = () => {
             reference: item.reference,
             source: item.source,
             date_reservation: item.date_reservation,
-            status: item.status || 'Confirmé'
+            status: item.status || 'Confirmé',
+            proprietaire_paye: false,
           };
         });
-        setReservations(formattedReservations);
+
+        const resaIds2 = formattedReservations.map(r => r.id);
+        let paidIds2 = new Set<string>();
+        if (resaIds2.length > 0) {
+          const { data: paidData2 } = await supabase
+            .from('virement_reservations')
+            .select('id_reservation')
+            .in('id_reservation', resaIds2);
+          paidIds2 = new Set((paidData2 ?? []).map((p: any) => p.id_reservation));
+        }
+        setReservations(formattedReservations.map(r => ({
+          ...r,
+          proprietaire_paye: paidIds2.has(r.id),
+        })));
       } catch (error) {
         console.error("Erreur lors du rechargement des données:", error);
         toast({
@@ -663,6 +708,7 @@ const ReservationsList: React.FC = () => {
             <TableHead className={getSortableHeaderClass("status")} onClick={() => handleSort("status")}>
               Statut {renderSortIcon("status")}
             </TableHead>
+            <TableHead>Prop. payé</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         );
@@ -684,6 +730,15 @@ const ReservationsList: React.FC = () => {
               <TableCell className="whitespace-nowrap">{formatPrice(reservation.prix_total)}</TableCell>
               <TableCell>{reservation.mode_paiement}</TableCell>
               <TableCell className="whitespace-nowrap">{renderStatus(reservation.status)}</TableCell>
+              <TableCell className="whitespace-nowrap">
+                {reservation.proprietaire_paye
+                  ? <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 flex items-center gap-1 w-fit">
+                      <Check className="h-3 w-3" /> Payé
+                    </Badge>
+                  : <Badge variant="outline" className="bg-orange-50 text-orange-600 border-orange-200 w-fit">
+                      En attente
+                    </Badge>}
+              </TableCell>
               <TableCell className="text-right whitespace-nowrap">
                 <div className="flex justify-end gap-1">
                   <Button variant="ghost" size="icon" aria-label="Générer contrat" title="Générer contrat" onClick={() => handleGenerateContract(reservation)}>
@@ -708,7 +763,7 @@ const ReservationsList: React.FC = () => {
             <div className="rounded-md border overflow-hidden">
               <Table><TableBody>
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8">
+                  <TableCell colSpan={10} className="text-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     <span className="mt-2 block text-sm text-gray-500">Chargement des réservations...</span>
                   </TableCell>
@@ -734,7 +789,7 @@ const ReservationsList: React.FC = () => {
                       <TableHeader>{tableHeader}</TableHeader>
                       <TableBody>
                         {arrivees.length === 0
-                          ? <TableRow><TableCell colSpan={9} className="text-center py-6 text-gray-400">Aucune arrivée prévue demain</TableCell></TableRow>
+                          ? <TableRow><TableCell colSpan={10} className="text-center py-6 text-gray-400">Aucune arrivée prévue demain</TableCell></TableRow>
                           : renderRows(arrivees, 'bg-green-50 hover:bg-green-100')}
                       </TableBody>
                     </Table>
@@ -753,7 +808,7 @@ const ReservationsList: React.FC = () => {
                       <TableHeader>{tableHeader}</TableHeader>
                       <TableBody>
                         {departs.length === 0
-                          ? <TableRow><TableCell colSpan={9} className="text-center py-6 text-gray-400">Aucun départ prévu demain</TableCell></TableRow>
+                          ? <TableRow><TableCell colSpan={10} className="text-center py-6 text-gray-400">Aucun départ prévu demain</TableCell></TableRow>
                           : renderRows(departs, 'bg-red-50 hover:bg-red-100')}
                       </TableBody>
                     </Table>
@@ -764,25 +819,79 @@ const ReservationsList: React.FC = () => {
           );
         }
 
+        const totalPages = Math.ceil(filteredReservations.length / ITEMS_PER_PAGE);
+        const paginated = filteredReservations.slice(
+          (currentPage - 1) * ITEMS_PER_PAGE,
+          currentPage * ITEMS_PER_PAGE
+        );
+
         return (
-          <div className="rounded-md border overflow-hidden">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>{tableHeader}</TableHeader>
-                <TableBody>
-                  {filteredReservations.length === 0
-                    ? <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8">
-                          <div className="text-gray-500">
-                            <FileText className="h-12 w-12 mx-auto opacity-20" />
-                            <p className="mt-2">Aucune réservation ne correspond aux critères</p>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    : renderRows(filteredReservations, '')}
-                </TableBody>
-              </Table>
+          <div className="space-y-3">
+            <div className="rounded-md border overflow-hidden">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>{tableHeader}</TableHeader>
+                  <TableBody>
+                    {filteredReservations.length === 0
+                      ? <TableRow>
+                          <TableCell colSpan={10} className="text-center py-8">
+                            <div className="text-gray-500">
+                              <FileText className="h-12 w-12 mx-auto opacity-20" />
+                              <p className="mt-2">Aucune réservation ne correspond aux critères</p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      : renderRows(paginated, '')}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between text-sm text-gray-600 px-1">
+                <span>
+                  {(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filteredReservations.length)} sur {filteredReservations.length}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronUp className="h-4 w-4 -rotate-90" />
+                  </Button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                    .reduce<(number | '...')[]>((acc, p, idx, arr) => {
+                      if (idx > 0 && typeof arr[idx - 1] === 'number' && (p as number) - (arr[idx - 1] as number) > 1) acc.push('...');
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, i) =>
+                      p === '...'
+                        ? <span key={`ellipsis-${i}`} className="px-1">…</span>
+                        : <Button
+                            key={p}
+                            variant={p === currentPage ? 'default' : 'outline'}
+                            size="sm"
+                            className="w-8 h-8 p-0"
+                            onClick={() => setCurrentPage(p as number)}
+                          >
+                            {p}
+                          </Button>
+                    )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    <ChevronDown className="h-4 w-4 -rotate-90" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}

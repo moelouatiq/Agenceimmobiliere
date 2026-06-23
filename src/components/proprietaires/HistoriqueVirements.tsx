@@ -61,10 +61,9 @@ const HistoriqueVirements: React.FC<HistoriqueVirementsProps> = ({
         .from("virements_proprietaires")
         .select(`
           *,
-          reservations(
-            date_arrivee,
-            date_depart,
-            proprietes(nom)
+          virement_reservations(
+            id_reservation,
+            reservations(date_arrivee, date_depart, proprietes(nom))
           )
         `)
         .eq("id_propriete", propriete.id)
@@ -300,15 +299,24 @@ const HistoriqueVirements: React.FC<HistoriqueVirementsProps> = ({
                     <TableCell>{formatMontant(virement.montant)}</TableCell>
                     <TableCell>{virement.mode_paiement}</TableCell>
                     <TableCell>
-                      {virement.reservations ? (
-                        <div className="text-sm">
-                          <div className="font-medium">
-                            {format(new Date(virement.reservations.date_arrivee), "dd/MM/yyyy", { locale: fr })} - 
-                            {format(new Date(virement.reservations.date_depart), "dd/MM/yyyy", { locale: fr })}
-                          </div>
-                          <div className="text-muted-foreground">
-                            {virement.reservations.proprietes?.nom || propriete.nom}
-                          </div>
+                      {virement.virement_reservations?.length > 0 ? (
+                        <div className="space-y-1">
+                          {virement.virement_reservations.map((jr: any) =>
+                            jr.reservations ? (
+                              <div key={jr.id_reservation} className="text-sm">
+                                <span className="font-medium">
+                                  {format(new Date(jr.reservations.date_arrivee), "dd/MM/yyyy", { locale: fr })}
+                                  {" – "}
+                                  {format(new Date(jr.reservations.date_depart), "dd/MM/yyyy", { locale: fr })}
+                                </span>
+                                {jr.reservations.proprietes?.nom && (
+                                  <span className="text-muted-foreground ml-1">
+                                    ({jr.reservations.proprietes.nom})
+                                  </span>
+                                )}
+                              </div>
+                            ) : null
+                          )}
                         </div>
                       ) : (
                         <span className="text-muted-foreground text-sm">Virement général</span>

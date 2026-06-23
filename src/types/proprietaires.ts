@@ -24,7 +24,7 @@ export interface BilanPropriete extends Propriete {
 export interface Virement {
   id: string;
   id_propriete: string;
-  id_reservation?: string;
+  id_reservations?: string[];
   date: Date | string;
   montant: number;
   mode_paiement: string;

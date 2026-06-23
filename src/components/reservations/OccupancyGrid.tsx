@@ -9,13 +9,15 @@ import {
   subMonths,
 } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, CalendarIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarIcon, Lock } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
 import ReservationDetailsDialog from './ReservationDetailsDialog';
+import BlockPeriodDialog from './BlockPeriodDialog';
+import BlockedPeriodDetailDialog, { type BlockedPeriod } from './BlockedPeriodDetailDialog';
 
 type Propriete = {
   id: string;
@@ -29,6 +31,8 @@ type Reservation = {
   date_depart: string;
   source: string | null;
   id_propriete: string;
+  is_blocked: boolean;
+  blocked_reason: string | null;
   clients: { nom: string; prenom: string } | null;
 };
 
@@ -41,7 +45,7 @@ const fetchOccupancy = async (from: string, to: string) => {
       .order('nom', { ascending: true }),
     supabase
       .from('reservations')
-      .select('id, date_arrivee, date_depart, source, id_propriete, clients(nom, prenom)')
+      .select('id, date_arrivee, date_depart, source, id_propriete, is_blocked, blocked_reason, clients(nom, prenom)')
       .lte('date_arrivee', to)
       .gte('date_depart', from)
       .or('status.is.null,status.neq.Annulé'),
@@ -72,7 +76,11 @@ const OccupancyGrid: React.FC = () => {
   const [customTo, setCustomTo] = useState<Date | undefined>(undefined);
   const [filterDisponible, setFilterDisponible] = useState(false);
   const [toPopoverOpen, setToPopoverOpen] = useState(false);
+
+  // Dialogs
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedBlocked, setSelectedBlocked] = useState<BlockedPeriod | null>(null);
+  const [blockDialogOpen, setBlockDialogOpen] = useState(false);
 
   const dateFrom = useCustom && customFrom ? customFrom : monthRef;
   const dateTo = useCustom && customTo ? customTo : endOfMonth(monthRef);
@@ -92,7 +100,6 @@ const OccupancyGrid: React.FC = () => {
   const reservations = data?.reservations ?? [];
   const days = eachDayOfInterval({ start: dateFrom, end: dateTo });
 
-  // Build map: `${propId}|${dayStr}` → Reservation (for O(1) cell lookup)
   const cellMap = useMemo(() => {
     const map = new Map<string, Reservation>();
     for (const res of reservations) {
@@ -108,8 +115,6 @@ const OccupancyGrid: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservations, fromStr, toStr]);
 
-  // IDs des propriétés occupées : date_arrivee < toStr ET date_depart > fromStr
-  // La date de départ est exclusive (un départ le 19 libère la nuit du 19)
   const occupiedPropIds = useMemo(
     () =>
       new Set(
@@ -129,27 +134,33 @@ const OccupancyGrid: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: ['occupancy'] });
   };
 
+  const handleCellClick = (res: Reservation, propNom: string) => {
+    if (res.is_blocked) {
+      setSelectedBlocked({
+        id: res.id,
+        date_arrivee: res.date_arrivee,
+        date_depart: res.date_depart,
+        blocked_reason: res.blocked_reason,
+        proprieteNom: propNom,
+      });
+    } else {
+      setSelectedId(res.id);
+    }
+  };
+
   return (
     <div className="space-y-3">
-      {/* Period controls */}
+      {/* Controls */}
       <div className="flex items-center gap-2 flex-wrap">
         {!useCustom && (
           <>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setMonthRef(m => subMonths(m, 1))}
-            >
+            <Button variant="outline" size="icon" onClick={() => setMonthRef(m => subMonths(m, 1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="font-semibold text-sm min-w-[140px] text-center capitalize">
               {format(monthRef, 'MMMM yyyy', { locale: fr })}
             </span>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setMonthRef(m => addMonths(m, 1))}
-            >
+            <Button variant="outline" size="icon" onClick={() => setMonthRef(m => addMonths(m, 1))}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </>
@@ -157,16 +168,9 @@ const OccupancyGrid: React.FC = () => {
 
         {useCustom && (
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Date arrivée */}
             <Popover>
               <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    'w-[130px] pl-3 text-left font-normal',
-                    !customFrom && 'text-muted-foreground'
-                  )}
-                >
+                <Button variant="outline" className={cn('w-[130px] pl-3 text-left font-normal', !customFrom && 'text-muted-foreground')}>
                   {customFrom ? format(customFrom, 'dd/MM/yyyy') : <span>Arrivée</span>}
                   <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                 </Button>
@@ -177,9 +181,7 @@ const OccupancyGrid: React.FC = () => {
                   selected={customFrom}
                   onSelect={date => {
                     setCustomFrom(date);
-                    // Réinitialiser la date de sortie si elle devient invalide
                     if (date && customTo && customTo <= date) setCustomTo(undefined);
-                    // Ouvrir automatiquement le picker de sortie
                     setTimeout(() => setToPopoverOpen(true), 100);
                   }}
                   locale={fr}
@@ -190,16 +192,9 @@ const OccupancyGrid: React.FC = () => {
 
             <span className="text-gray-400">→</span>
 
-            {/* Date sortie — s'ouvre automatiquement après la sélection de l'arrivée */}
             <Popover open={toPopoverOpen} onOpenChange={setToPopoverOpen}>
               <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    'w-[130px] pl-3 text-left font-normal',
-                    !customTo && 'text-muted-foreground'
-                  )}
-                >
+                <Button variant="outline" className={cn('w-[130px] pl-3 text-left font-normal', !customTo && 'text-muted-foreground')}>
                   {customTo ? format(customTo, 'dd/MM/yyyy') : <span>Sortie</span>}
                   <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
                 </Button>
@@ -243,10 +238,21 @@ const OccupancyGrid: React.FC = () => {
         >
           {useCustom ? 'Retour au mois' : 'Plage personnalisée'}
         </Button>
+
+        {/* Block period button */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto border-gray-400 text-gray-600 hover:bg-gray-100"
+          onClick={() => setBlockDialogOpen(true)}
+        >
+          <Lock className="mr-2 h-3.5 w-3.5" />
+          Bloquer une période
+        </Button>
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 text-xs text-gray-600">
+      <div className="flex items-center gap-4 text-xs text-gray-600 flex-wrap">
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-3.5 h-3.5 rounded bg-red-500" />
           Airbnb
@@ -260,6 +266,10 @@ const OccupancyGrid: React.FC = () => {
           Source inconnue
         </span>
         <span className="flex items-center gap-1.5">
+          <span className="inline-block w-3.5 h-3.5 rounded bg-gray-500" />
+          Bloqué
+        </span>
+        <span className="flex items-center gap-1.5">
           <span className="inline-block w-3.5 h-3.5 rounded border border-gray-200" />
           Libre
         </span>
@@ -269,15 +279,12 @@ const OccupancyGrid: React.FC = () => {
       {isLoading ? (
         <div className="text-center py-16 text-gray-500 text-sm">Chargement...</div>
       ) : isError ? (
-        <div className="text-center py-16 text-red-500 text-sm">
-          Erreur lors du chargement des données.
-        </div>
+        <div className="text-center py-16 text-red-500 text-sm">Erreur lors du chargement des données.</div>
       ) : (
         <div className="overflow-auto rounded-md border" style={{ maxHeight: '65vh' }}>
           <table className="border-collapse text-xs" style={{ minWidth: 'max-content' }}>
             <thead>
               <tr>
-                {/* top-left sticky corner */}
                 <th className="sticky left-0 top-0 z-30 bg-gray-50 border border-gray-200 px-2 py-1 min-w-[90px]" />
                 {displayProprietes.map(prop => (
                   <th
@@ -287,9 +294,7 @@ const OccupancyGrid: React.FC = () => {
                   >
                     <div className="w-[90px]">
                       {prop.nom_residence && (
-                        <div className="text-[9px] text-gray-400 truncate leading-tight">
-                          {prop.nom_residence}
-                        </div>
+                        <div className="text-[9px] text-gray-400 truncate leading-tight">{prop.nom_residence}</div>
                       )}
                       <div className="truncate leading-tight">{prop.nom}</div>
                     </div>
@@ -304,13 +309,10 @@ const OccupancyGrid: React.FC = () => {
 
                 return (
                   <tr key={dayStr}>
-                    {/* sticky day label */}
-                    <td
-                      className={cn(
-                        'sticky left-0 z-10 border border-gray-200 px-2 py-0.5 whitespace-nowrap font-medium',
-                        isToday ? 'bg-blue-100 text-blue-700' : 'bg-gray-50'
-                      )}
-                    >
+                    <td className={cn(
+                      'sticky left-0 z-10 border border-gray-200 px-2 py-0.5 whitespace-nowrap font-medium',
+                      isToday ? 'bg-blue-100 text-blue-700' : 'bg-gray-50'
+                    )}>
                       <span className="capitalize">
                         {format(day, 'EEE dd/MM', { locale: fr })}
                       </span>
@@ -319,18 +321,23 @@ const OccupancyGrid: React.FC = () => {
                     {displayProprietes.map(prop => {
                       const res = cellMap.get(`${prop.id}|${dayStr}`);
                       const client = res?.clients;
-                      const tooltipText = res
-                        ? [
-                            client ? `${client.nom} ${client.prenom}` : null,
-                            res.source || 'Source inconnue',
-                            `${res.date_arrivee} → ${res.date_depart}`,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ')
-                        : undefined;
+                      const isBlocked = res?.is_blocked ?? false;
 
-                      const clientLabel =
-                        client ? `${client.nom} ${client.prenom}` : res?.source ?? '';
+                      const label = isBlocked
+                        ? (res.blocked_reason ?? 'Bloqué')
+                        : client
+                          ? `${client.nom} ${client.prenom}`
+                          : res?.source ?? '';
+
+                      const tooltipText = res
+                        ? isBlocked
+                          ? `🔒 ${res.blocked_reason ?? 'Bloqué'} · ${res.date_arrivee} → ${res.date_depart}`
+                          : [
+                              client ? `${client.nom} ${client.prenom}` : null,
+                              res.source || 'Source inconnue',
+                              `${res.date_arrivee} → ${res.date_depart}`,
+                            ].filter(Boolean).join(' · ')
+                        : undefined;
 
                       return (
                         <td
@@ -338,17 +345,20 @@ const OccupancyGrid: React.FC = () => {
                           className={cn(
                             'border border-gray-200 h-7 w-[90px] transition-colors overflow-hidden',
                             res
-                              ? cn(cellColor(res.source ?? null), 'cursor-pointer')
+                              ? isBlocked
+                                ? 'bg-gray-500 hover:bg-gray-400 cursor-pointer'
+                                : cn(cellColor(res.source ?? null), 'cursor-pointer')
                               : isToday
-                              ? 'bg-blue-50'
-                              : ''
+                                ? 'bg-blue-50'
+                                : ''
                           )}
                           title={tooltipText}
-                          onClick={() => res && setSelectedId(res.id)}
+                          onClick={() => res && handleCellClick(res, prop.nom)}
                         >
                           {res && (
-                            <span className="block px-1 text-[10px] font-medium text-white leading-7 truncate drop-shadow-sm select-none">
-                              {clientLabel}
+                            <span className="flex items-center gap-0.5 px-1 text-[10px] font-medium text-white leading-7 truncate drop-shadow-sm select-none">
+                              {isBlocked && <Lock className="h-2.5 w-2.5 shrink-0" />}
+                              <span className="truncate">{label}</span>
                             </span>
                           )}
                         </td>
@@ -362,10 +372,22 @@ const OccupancyGrid: React.FC = () => {
         </div>
       )}
 
+      {/* Dialogs */}
       <ReservationDetailsDialog
         reservationId={selectedId}
         onClose={() => setSelectedId(null)}
         onUpdate={handleUpdate}
+      />
+
+      <BlockedPeriodDetailDialog
+        period={selectedBlocked}
+        onClose={() => setSelectedBlocked(null)}
+      />
+
+      <BlockPeriodDialog
+        open={blockDialogOpen}
+        onClose={() => setBlockDialogOpen(false)}
+        proprietes={proprietes}
       />
     </div>
   );

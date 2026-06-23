@@ -124,11 +124,27 @@ const GestionVirements = () => {
 
   const handleVirementSubmit = async (virement: Virement) => {
     try {
+      const { id_reservations, ...virementRow } = virement;
+
       const { data, error } = await supabase
         .from("virements_proprietaires")
-        .insert([virement]);
+        .insert([virementRow])
+        .select("id")
+        .single();
 
       if (error) throw error;
+
+      if (id_reservations && id_reservations.length > 0) {
+        const { error: jError } = await supabase
+          .from("virement_reservations")
+          .insert(
+            id_reservations.map((id_reservation) => ({
+              id_virement: data.id,
+              id_reservation,
+            }))
+          );
+        if (jError) throw jError;
+      }
 
       fetchData();
       setShowVirementForm(false);

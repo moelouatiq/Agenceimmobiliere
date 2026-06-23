@@ -5,7 +5,7 @@ import { fr } from "date-fns/locale/fr";
 import { Calendar } from "@/components/ui/calendar";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { cn } from "@/lib/utils";
 
@@ -16,10 +16,12 @@ type Client = { nom: string; prenom: string; telephone: string; };
 type Reservation = {
   id: string;
   id_propriete: string;
-  date_arrivee: string; // yyyy-MM-dd
-  date_depart: string;  // yyyy-MM-dd
-  clients: Client;      // single client object
-  proprietes: Propriete; // single property object
+  date_arrivee: string;
+  date_depart: string;
+  is_blocked: boolean;
+  blocked_reason: string | null;
+  clients: Client;
+  proprietes: Propriete;
 };
 
 type ReservationWithDates = Reservation & {
@@ -72,11 +74,14 @@ const ReservationsCalendar: React.FC<ReservationsCalendarProps> = ({ onlyProprie
           id_propriete,
           date_arrivee,
           date_depart,
+          is_blocked,
+          blocked_reason,
           clients!inner(nom, prenom, telephone),
           proprietes!inner(id, nom)
         `)
         .gte('date_depart', rangeBegin)
-        .lte('date_arrivee', rangeEnd);
+        .lte('date_arrivee', rangeEnd)
+        .neq('status', 'Annulé');
       if (!errRes && Array.isArray(resvs)) {
         const mappedReservations: ReservationWithDates[] = resvs.map((res: any) => {
           const clientObj: Client = Array.isArray(res.clients) ? res.clients[0] : res.clients;
@@ -86,6 +91,8 @@ const ReservationsCalendar: React.FC<ReservationsCalendarProps> = ({ onlyProprie
             id_propriete: res.id_propriete,
             date_arrivee: res.date_arrivee,
             date_depart: res.date_depart,
+            is_blocked: res.is_blocked ?? false,
+            blocked_reason: res.blocked_reason ?? null,
             clients: clientObj,
             proprietes: proprieteObj,
             range: getReservationRange({
@@ -93,6 +100,8 @@ const ReservationsCalendar: React.FC<ReservationsCalendarProps> = ({ onlyProprie
               id_propriete: res.id_propriete,
               date_arrivee: res.date_arrivee,
               date_depart: res.date_depart,
+              is_blocked: res.is_blocked ?? false,
+              blocked_reason: res.blocked_reason ?? null,
               clients: clientObj,
               proprietes: proprieteObj,
             }),
@@ -193,28 +202,46 @@ function ProprieteCalendar({
           const isReserved = !!res;
 
           if (isReserved) {
+            const isBlocked = res.is_blocked;
             return (
               <HoverCard key={format(date, "yyyy-MM-dd")}>
                 <HoverCardTrigger asChild>
                   <div
                     className={cn(
-                      baseCellStyle, 
-                      "bg-[#FEC6A1] text-purple-900 font-semibold hover:ring-2 hover:ring-orange-400 transition-shadow"
+                      baseCellStyle,
+                      isBlocked
+                        ? "bg-gray-500 text-white font-semibold hover:ring-2 hover:ring-gray-400 transition-shadow"
+                        : "bg-[#FEC6A1] text-purple-900 font-semibold hover:ring-2 hover:ring-orange-400 transition-shadow"
                     )}
-                    style={{ border: "2px solid #FEC6A1" }}
+                    style={{ border: isBlocked ? "2px solid #6b7280" : "2px solid #FEC6A1" }}
                   >
                     <span>{date.getDate()}</span>
-                    <span className="block text-[10px] mt-0.5">Réservé</span>
+                    {isBlocked
+                      ? <span className="flex items-center gap-0.5 text-[9px] mt-0.5"><Lock className="h-2.5 w-2.5" />Bloqué</span>
+                      : <span className="block text-[10px] mt-0.5">Réservé</span>}
                   </div>
                 </HoverCardTrigger>
                 <HoverCardContent className="p-3 text-xs min-w-[170px]">
-                  <div><strong>Client&nbsp;:</strong> {res.clients.nom} {res.clients.prenom}</div>
-                  <div><strong>Tél&nbsp;:</strong> {res.clients.telephone || <i>n/a</i>}</div>
-                  <div>
-                    <strong>Séjour&nbsp;:</strong> du {format(parseISO(res.date_arrivee), 'dd/MM/yyyy')}
-                    &nbsp;au {format(parseISO(res.date_depart), 'dd/MM/yyyy')}
-                  </div>
-                  <div><strong>Propriété&nbsp;:</strong> {res.proprietes.nom}</div>
+                  {isBlocked ? (
+                    <>
+                      <div className="flex items-center gap-1 font-semibold mb-1"><Lock className="h-3 w-3" />Période bloquée</div>
+                      <div><strong>Motif&nbsp;:</strong> {res.blocked_reason ?? '—'}</div>
+                      <div>
+                        <strong>Du&nbsp;:</strong> {format(parseISO(res.date_arrivee), 'dd/MM/yyyy')}
+                        &nbsp;<strong>au&nbsp;:</strong> {format(parseISO(res.date_depart), 'dd/MM/yyyy')}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div><strong>Client&nbsp;:</strong> {res.clients.nom} {res.clients.prenom}</div>
+                      <div><strong>Tél&nbsp;:</strong> {res.clients.telephone || <i>n/a</i>}</div>
+                      <div>
+                        <strong>Séjour&nbsp;:</strong> du {format(parseISO(res.date_arrivee), 'dd/MM/yyyy')}
+                        &nbsp;au {format(parseISO(res.date_depart), 'dd/MM/yyyy')}
+                      </div>
+                      <div><strong>Propriété&nbsp;:</strong> {res.proprietes.nom}</div>
+                    </>
+                  )}
                 </HoverCardContent>
               </HoverCard>
             );
