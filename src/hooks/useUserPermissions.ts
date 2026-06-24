@@ -55,7 +55,8 @@ export const useUserPermissions = (): UseUserPermissionsReturnType => {
       return;
     }
 
-    setIsLoading(true);
+    // Ne montrer le spinner que lors du tout premier chargement
+    if (userRole === null) setIsLoading(true);
     try {
       console.log('Fetching permissions for user:', user.id);
       // Get user role
@@ -131,7 +132,8 @@ export const useUserPermissions = (): UseUserPermissionsReturnType => {
 
   useEffect(() => {
     refreshPermissions();
-  }, [user]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   // This function checks if the user can access a table or page path
   const canAccessTable = (tableNameOrPath: string): boolean => {
