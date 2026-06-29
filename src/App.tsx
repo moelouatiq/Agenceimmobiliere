@@ -10,6 +10,8 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/app-sidebar";
 import SignIn from "@/pages/SignIn";
 import SignUp from "@/pages/SignUp";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 import Index from "./pages/Index";
 import Proprietes from "./pages/Proprietes";
 import Proprietaires from "./pages/Proprietaires";
@@ -37,6 +39,8 @@ const App = () => (
           <Routes>
             <Route path="/signin" element={<SignIn />} />
             <Route path="/signup" element={<SignUp />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
             <Route
               path="/*"
               element={

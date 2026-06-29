@@ -95,6 +95,11 @@ const SignIn = () => {
                   "Se connecter"
                 )}
               </Button>
+              <p className="text-center text-sm">
+                <Link to="/forgot-password" className="text-progest-primary hover:underline font-medium">
+                  Mot de passe oublié ?
+                </Link>
+              </p>
               {(!isCheckingSignups && signupsAllowed === true) && (
                 <p className="text-center text-sm text-gray-600">
                   Pas encore de compte ?{" "}
