@@ -48,7 +48,7 @@ const App = () => (
                   <SidebarProvider>
                     <div className="min-h-screen flex w-full bg-gray-50">
                       <AppSidebar />
-                      <main className="flex-1 relative">
+                      <main className="flex-1 relative min-w-0">
                         <SidebarTrigger />
                         <Routes>
                           <Route path="/" element={<Index />} />

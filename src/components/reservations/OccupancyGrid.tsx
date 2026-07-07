@@ -281,7 +281,8 @@ const OccupancyGrid: React.FC = () => {
       ) : isError ? (
         <div className="text-center py-16 text-red-500 text-sm">Erreur lors du chargement des données.</div>
       ) : (
-        <div className="overflow-auto rounded-md border" style={{ maxHeight: '65vh' }}>
+        <div className="w-full max-w-full min-w-0 overflow-hidden rounded-md border">
+          <div className="w-full max-w-full overflow-auto" style={{ maxHeight: '65vh' }}>
           <table className="border-collapse text-xs" style={{ minWidth: 'max-content' }}>
             <thead>
               <tr>
@@ -369,6 +370,7 @@ const OccupancyGrid: React.FC = () => {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
