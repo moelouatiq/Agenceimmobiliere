@@ -36,6 +36,7 @@ type ReservationWithDetails = {
   date_reservation: string;
   status: string;
   proprietaire_paye: boolean;
+  created_at: string | null;
 };
 
 // Type pour les propriétés et sources (pour les filtres)
@@ -159,6 +160,7 @@ const ReservationsList: React.FC = () => {
             mode_paiement,
             reference,
             status,
+            created_at,
             clients (id, nom, prenom, cin_passport, telephone),
             proprietes (id, nom, nom_residence, type_appartement)
           `)
@@ -205,6 +207,7 @@ const ReservationsList: React.FC = () => {
             date_reservation: item.date_reservation,
             status: item.status || 'Confirmé',
             proprietaire_paye: false,
+            created_at: item.created_at || null,
           };
         });
 
@@ -314,7 +317,8 @@ const ReservationsList: React.FC = () => {
         if (
           sortConfig.field === 'date_arrivee' ||
           sortConfig.field === 'date_depart' ||
-          sortConfig.field === 'date_reservation'
+          sortConfig.field === 'date_reservation' ||
+          sortConfig.field === 'created_at'
         ) {
           aValue = aValue ? parseISO(aValue as string) : new Date(0);
           bValue = bValue ? parseISO(bValue as string) : new Date(0);
@@ -394,6 +398,12 @@ const ReservationsList: React.FC = () => {
     }).format(amount);
   };
 
+  // Formater la date de création
+  const formatCreatedAt = (dateStr: string | null) => {
+    if (!dateStr) return '—';
+    return format(parseISO(dateStr), "dd/MM/yyyy 'à' HH:mm", { locale: fr });
+  };
+
   // Gérer la mise à jour après édition
   const handleReservationUpdate = () => {
     // Recharger les données
@@ -417,6 +427,7 @@ const ReservationsList: React.FC = () => {
             mode_paiement,
             reference,
             status,
+            created_at,
             clients (id, nom, prenom, cin_passport, telephone),
             proprietes (id, nom, nom_residence, type_appartement)
           `)
@@ -461,6 +472,7 @@ const ReservationsList: React.FC = () => {
             date_reservation: item.date_reservation,
             status: item.status || 'Confirmé',
             proprietaire_paye: false,
+            created_at: item.created_at || null,
           };
         });
 
@@ -709,6 +721,9 @@ const ReservationsList: React.FC = () => {
               Statut {renderSortIcon("status")}
             </TableHead>
             <TableHead>Prop. payé</TableHead>
+            <TableHead className={getSortableHeaderClass("created_at")} onClick={() => handleSort("created_at")}>
+              Date de création {renderSortIcon("created_at")}
+            </TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         );
@@ -739,6 +754,9 @@ const ReservationsList: React.FC = () => {
                       En attente
                     </Badge>}
               </TableCell>
+              <TableCell className="whitespace-nowrap text-gray-500">
+                {formatCreatedAt(reservation.created_at)}
+              </TableCell>
               <TableCell className="text-right whitespace-nowrap">
                 <div className="flex justify-end gap-1">
                   <Button variant="ghost" size="icon" aria-label="Générer contrat" title="Générer contrat" onClick={() => handleGenerateContract(reservation)}>
@@ -763,7 +781,7 @@ const ReservationsList: React.FC = () => {
             <div className="rounded-md border overflow-hidden">
               <Table><TableBody>
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8">
+                  <TableCell colSpan={11} className="text-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                     <span className="mt-2 block text-sm text-gray-500">Chargement des réservations...</span>
                   </TableCell>
@@ -789,7 +807,7 @@ const ReservationsList: React.FC = () => {
                       <TableHeader>{tableHeader}</TableHeader>
                       <TableBody>
                         {arrivees.length === 0
-                          ? <TableRow><TableCell colSpan={10} className="text-center py-6 text-gray-400">Aucune arrivée prévue demain</TableCell></TableRow>
+                          ? <TableRow><TableCell colSpan={11} className="text-center py-6 text-gray-400">Aucune arrivée prévue demain</TableCell></TableRow>
                           : renderRows(arrivees, 'bg-green-50 hover:bg-green-100')}
                       </TableBody>
                     </Table>
@@ -808,7 +826,7 @@ const ReservationsList: React.FC = () => {
                       <TableHeader>{tableHeader}</TableHeader>
                       <TableBody>
                         {departs.length === 0
-                          ? <TableRow><TableCell colSpan={10} className="text-center py-6 text-gray-400">Aucun départ prévu demain</TableCell></TableRow>
+                          ? <TableRow><TableCell colSpan={11} className="text-center py-6 text-gray-400">Aucun départ prévu demain</TableCell></TableRow>
                           : renderRows(departs, 'bg-red-50 hover:bg-red-100')}
                       </TableBody>
                     </Table>
@@ -834,7 +852,7 @@ const ReservationsList: React.FC = () => {
                   <TableBody>
                     {filteredReservations.length === 0
                       ? <TableRow>
-                          <TableCell colSpan={10} className="text-center py-8">
+                          <TableCell colSpan={11} className="text-center py-8">
                             <div className="text-gray-500">
                               <FileText className="h-12 w-12 mx-auto opacity-20" />
                               <p className="mt-2">Aucune réservation ne correspond aux critères</p>
