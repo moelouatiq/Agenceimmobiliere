@@ -38,6 +38,8 @@ export type Propriete = {
   taux_commission: number;
   autre_info?: string;
   ordre?: number;
+  owner_email?: string | null;
+  owner_notifications_enabled?: boolean;
 };
 
 interface ListeProprietesProps {

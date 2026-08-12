@@ -33,7 +33,11 @@ type Propriete = {
   taux_commission: number;
   nom_residence?: string;
   type_appartement?: string;
+  owner_email?: string | null;
+  owner_notifications_enabled?: boolean;
 };
+
+const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 type SourceReservation = { id: string, nom: string };
 
 const reservationSchema = z.object({
@@ -120,7 +124,7 @@ const Reservations = () => {
       try {
         const { data, error } = await supabase
           .from('proprietes')
-          .select('id, nom, taux_commission, nom_residence, type_appartement')
+          .select('id, nom, taux_commission, nom_residence, type_appartement, owner_email, owner_notifications_enabled')
           .order('nom');
         if (error) throw error;
         setProprietes(data || []);
@@ -297,28 +301,46 @@ const Reservations = () => {
 
       toast.success('Réservation ajoutée avec succès');
 
-      // Envoi email de confirmation si email fourni (non bloquant)
-      if (data.email) {
-        const selectedProp = proprietes.find(p => p.id === data.id_propriete);
+      // Envoi des emails de confirmation client / notification propriétaire (non bloquant :
+      // la réservation est déjà enregistrée, un échec d'envoi ne doit jamais la remettre en cause).
+      // Déclenché une seule fois ici, juste après la création réussie de la réservation.
+      const selectedProp = proprietes.find(p => p.id === data.id_propriete);
+      const ownerEmail =
+        selectedProp?.owner_notifications_enabled &&
+        selectedProp?.owner_email &&
+        isValidEmail(selectedProp.owner_email)
+          ? selectedProp.owner_email
+          : null;
+
+      if (data.email || ownerEmail) {
         supabase.functions.invoke('send-reservation-confirmation', {
           body: {
-            clientEmail:    data.email,
-            clientNom:      data.nom,
-            clientPrenom:   data.prenom,
-            proprieteNom:   selectedProp?.nom ?? '',
-            residenceNom:   selectedProp?.nom_residence ?? '',
-            dateArrivee:    format(data.date_arrivee, 'yyyy-MM-dd'),
-            dateDepart:     format(data.date_depart, 'yyyy-MM-dd'),
+            clientEmail:     data.email || null,
+            ownerEmail,
+            clientNom:       data.nom,
+            clientPrenom:    data.prenom,
+            clientTelephone: data.telephone,
+            proprieteNom:    selectedProp?.nom ?? '',
+            residenceNom:    selectedProp?.nom_residence ?? '',
+            dateArrivee:     format(data.date_arrivee, 'yyyy-MM-dd'),
+            dateDepart:      format(data.date_depart, 'yyyy-MM-dd'),
             nombreJours,
             prixTotal,
-            paiementAvance: data.paiement_avance,
+            paiementAvance:  data.paiement_avance,
             resteAPayer,
+            status: 'Confirmé',
+            createdAt: new Date().toISOString(),
           },
-        }).then(({ error }) => {
+        }).then(({ data: notifResult, error }) => {
           if (error) {
-            console.error('Email confirmation error:', error);
-          } else {
+            console.error('Erreur envoi email(s) de notification:', error);
+            return;
+          }
+          if (data.email && notifResult?.client?.sent) {
             toast.success('Email de confirmation envoyé au client');
+          }
+          if (ownerEmail && notifResult?.owner?.sent === false) {
+            console.error('Échec envoi email propriétaire:', notifResult.owner.error);
           }
         });
       }

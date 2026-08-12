@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectTrigger, SelectValue, SelectItem } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import ListeProprietes, { Propriete } from '@/components/proprietes/ListeProprietes';
 
@@ -39,8 +40,16 @@ const proprieteSchema = z.object({
   }).max(100, {
     message: 'Le taux ne peut pas dépasser 100%'
   }),
-  autre_info: z.string().optional()
-});
+  autre_info: z.string().optional(),
+  owner_email: z.union([z.string().email({ message: 'Email invalide' }), z.literal('')]).optional(),
+  owner_notifications_enabled: z.boolean().optional(),
+}).refine(
+  data => !data.owner_notifications_enabled || (!!data.owner_email && data.owner_email.trim() !== ''),
+  {
+    message: "Un email propriétaire est requis pour activer les notifications",
+    path: ['owner_email'],
+  }
+);
 type ProprietesFormValues = z.infer<typeof proprieteSchema>;
 
 const Proprietes = () => {
@@ -84,20 +93,27 @@ const Proprietes = () => {
       type_appartement: '',
       groupe: '',
       taux_commission: 0,
-      autre_info: ''
+      autre_info: '',
+      owner_email: '',
+      owner_notifications_enabled: false,
     }
   });
 
   const onSubmit = async (data: ProprietesFormValues) => {
     setIsSubmitting(true);
+    const payload = {
+      ...data,
+      owner_email: data.owner_email?.trim() ? data.owner_email.trim() : null,
+      owner_notifications_enabled: !!data.owner_notifications_enabled,
+    };
     try {
       if (currentId) {
         // Mode édition
         const { error } = await supabase
           .from('proprietes')
-          .update(data)
+          .update(payload)
           .eq('id', currentId);
-        
+
         if (error) throw error;
         toast.success('Propriété mise à jour avec succès');
       } else {
@@ -105,8 +121,8 @@ const Proprietes = () => {
         const id = uuidv4();
         const { error } = await supabase
           .from('proprietes')
-          .insert({ id, ...data });
-        
+          .insert({ id, ...payload });
+
         if (error) throw error;
         toast.success('Propriété ajoutée avec succès');
       }
@@ -131,7 +147,9 @@ const Proprietes = () => {
       type_appartement: propriete.type_appartement,
       groupe: propriete.groupe || '',
       taux_commission: propriete.taux_commission,
-      autre_info: propriete.autre_info || ''
+      autre_info: propriete.autre_info || '',
+      owner_email: propriete.owner_email || '',
+      owner_notifications_enabled: !!propriete.owner_notifications_enabled,
     });
   };
 
@@ -311,6 +329,37 @@ const Proprietes = () => {
                       <FormMessage />
                     </FormItem>
                   )} />
+
+                  <div className="border rounded-md p-4 space-y-4">
+                    <div>
+                      <h3 className="text-base font-semibold">Notifications propriétaire</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Envoyer automatiquement un email au propriétaire à chaque nouvelle réservation pour cet établissement.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <FormField control={form.control} name="owner_email" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email du propriétaire</FormLabel>
+                          <FormControl>
+                            <Input type="email" placeholder="proprietaire@example.com" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+
+                      <FormField control={form.control} name="owner_notifications_enabled" render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-md border p-3">
+                          <FormLabel className="flex-1 pr-4 font-normal">
+                            Envoyer un email au propriétaire à chaque nouvelle réservation
+                          </FormLabel>
+                          <FormControl>
+                            <Switch checked={!!field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
 
                   <div className="flex gap-4">
                     <Button type="submit" className="w-full md:w-auto" disabled={isSubmitting}>
